@@ -1,0 +1,10 @@
+# Environment variables with secrets
+.env
+
+# Nginx SSL certificates
+nginx/ssl/*.pem
+nginx/ssl/*.key
+nginx/ssl/*.crt
+
+# Local data directories if mounted for testing
+data/

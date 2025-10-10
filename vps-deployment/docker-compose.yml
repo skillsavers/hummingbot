@@ -1,0 +1,79 @@
+version: '3.8'
+
+services:
+  hummingbot:
+    image: ghcr.io/skillsavers/hummingbot:latest
+    container_name: hummingbot
+    restart: unless-stopped
+    volumes:
+      - ./data/hummingbot/conf:/home/hummingbot/conf
+      - ./data/hummingbot/conf/connectors:/home/hummingbot/conf/connectors
+      - ./data/hummingbot/conf/strategies:/home/hummingbot/conf/strategies
+      - ./data/hummingbot/conf/controllers:/home/hummingbot/conf/controllers
+      - ./data/hummingbot/conf/scripts:/home/hummingbot/conf/scripts
+      - ./data/hummingbot/logs:/home/hummingbot/logs
+      - ./data/hummingbot/data:/home/hummingbot/data
+      - ./data/hummingbot/certs:/home/hummingbot/certs
+      - ./data/hummingbot/scripts:/home/hummingbot/scripts
+      - ./data/hummingbot/controllers:/home/hummingbot/controllers
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "5"
+    tty: true
+    stdin_open: true
+    networks:
+      - hummingbot-network
+    # Uncomment if Hummingbot exposes an API (usually on port 15888 for Gateway)
+    # expose:
+    #   - "15888"
+
+  nginx:
+    image: nginx:alpine
+    container_name: nginx-proxy
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./nginx/conf.d:/etc/nginx/conf.d:ro
+      - ./nginx/ssl:/etc/nginx/ssl:ro
+      - ./data/nginx/cache:/var/cache/nginx
+      - ./data/nginx/logs:/var/log/nginx
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    networks:
+      - hummingbot-network
+    depends_on:
+      - hummingbot
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  # Optional: Add watchtower for automatic updates
+  watchtower:
+    image: containrrr/watchtower
+    container_name: watchtower
+    restart: unless-stopped
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    environment:
+      - WATCHTOWER_CLEANUP=true
+      - WATCHTOWER_INCLUDE_STOPPED=false
+      - WATCHTOWER_POLL_INTERVAL=3600  # Check for updates every hour
+      - WATCHTOWER_ROLLING_RESTART=true
+    command: hummingbot nginx-proxy
+    networks:
+      - hummingbot-network
+
+networks:
+  hummingbot-network:
+    driver: bridge
