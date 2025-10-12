@@ -1,44 +1,20 @@
 version: '3.8'
 
 services:
-  hummingbot:
-    image: ghcr.io/skillsavers/hummingbot:latest
-    container_name: hummingbot
-    restart: unless-stopped
-    volumes:
-      - ./data/hummingbot/conf:/home/hummingbot/conf
-      - ./data/hummingbot/conf/connectors:/home/hummingbot/conf/connectors
-      - ./data/hummingbot/conf/strategies:/home/hummingbot/conf/strategies
-      - ./data/hummingbot/conf/controllers:/home/hummingbot/conf/controllers
-      - ./data/hummingbot/conf/scripts:/home/hummingbot/conf/scripts
-      - ./data/hummingbot/logs:/home/hummingbot/logs
-      - ./data/hummingbot/data:/home/hummingbot/data
-      - ./data/hummingbot/certs:/home/hummingbot/certs
-      - ./data/hummingbot/scripts:/home/hummingbot/scripts
-      - ./data/hummingbot/controllers:/home/hummingbot/controllers
-    environment:
-      - CONFIG_PASSWORD=${CONFIG_PASSWORD}
-    logging:
-      driver: json-file
-      options:
-        max-size: "10m"
-        max-file: "5"
-    tty: true
-    stdin_open: true
-    networks:
-      - hummingbot-network
-
   # =================================================================
-  # MCP Integration Services
+  # Core Services
   # =================================================================
 
-  # Hummingbot API Server - Required for MCP integration
+  # Hummingbot API Server - Required for bot orchestration
   hummingbot-api:
     image: hummingbot/hummingbot-api:latest
     container_name: hummingbot-api
     restart: unless-stopped
+    ports:
+      - "8000:8000"
     volumes:
       - ./data/bots:/hummingbot-api/bots
+      - ./data/bots/instances:/hummingbot-api/instances
       - /var/run/docker.sock:/var/run/docker.sock
     environment:
       - DEBUG_MODE=${DEBUG_MODE:-false}
@@ -62,8 +38,6 @@ services:
         max-file: "5"
     networks:
       - hummingbot-network
-    expose:
-      - "8000"
     depends_on:
       postgres:
         condition: service_healthy
@@ -127,6 +101,37 @@ services:
       timeout: 25s
       retries: 5
 
+  # Hummingbot Dashboard - Web UI for bot management
+  dashboard:
+    image: hummingbot/dashboard:latest
+    container_name: hummingbot-dashboard
+    restart: unless-stopped
+    ports:
+      - "8501:8501"
+    environment:
+      - AUTH_SYSTEM_ENABLED=${AUTH_SYSTEM_ENABLED:-true}
+      - DEFAULT_USERNAME=${DASHBOARD_USERNAME:-admin}
+      - DEFAULT_PASSWORD=${DASHBOARD_PASSWORD:-admin}
+      - BACKEND_API_HOST=hummingbot-api
+      - BACKEND_API_PORT=8000
+      - BACKEND_API_USERNAME=${API_USERNAME}
+      - BACKEND_API_PASSWORD=${API_PASSWORD}
+      - CONFIG_PASSWORD=${CONFIG_PASSWORD}
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ./data/bots:/app/bots
+      - ./data/dashboard:/app/data
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "5"
+    networks:
+      - hummingbot-network
+    depends_on:
+      hummingbot-api:
+        condition: service_started
+
   nginx:
     image: nginx:alpine
     container_name: nginx-proxy
@@ -148,8 +153,8 @@ services:
     networks:
       - hummingbot-network
     depends_on:
-      - hummingbot
       - hummingbot-api
+      - dashboard
     healthcheck:
       test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost/health"]
       interval: 30s
@@ -169,7 +174,7 @@ services:
       - WATCHTOWER_INCLUDE_STOPPED=false
       - WATCHTOWER_POLL_INTERVAL=${WATCHTOWER_POLL_INTERVAL:-3600}
       - WATCHTOWER_ROLLING_RESTART=true
-    command: hummingbot nginx-proxy hummingbot-api hummingbot-postgres hummingbot-broker
+    command: nginx-proxy hummingbot-api hummingbot-postgres hummingbot-broker hummingbot-dashboard
     networks:
       - hummingbot-network
 

@@ -58,6 +58,7 @@ ENV COMMIT_BRANCH=${BRANCH}
 ENV BUILD_DATE=${BUILD_DATE}
 
 ENV INSTALLATION_TYPE=docker
+ENV HEADLESS=true
 
 # Install system dependencies
 RUN apt-get update && \

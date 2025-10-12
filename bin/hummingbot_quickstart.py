@@ -268,8 +268,11 @@ def main():
     if args.config_password is None and len(os.environ.get("CONFIG_PASSWORD", "")) > 0:
         args.config_password = os.environ["CONFIG_PASSWORD"]
 
-    if args.headless is None and len(os.environ.get("HEADLESS_MODE", "")) > 0:
-        args.headless = os.environ["HEADLESS_MODE"].lower() == "true"
+    if args.headless is None:
+        # Check HEADLESS first (API standard), fall back to HEADLESS_MODE for backward compatibility
+        # Default to "true" for containerized deployments
+        headless_env = os.environ.get("HEADLESS") or os.environ.get("HEADLESS_MODE", "true")
+        args.headless = headless_env.lower() == "true"
 
     # If no password is given from the command line, prompt for one.
     secrets_manager_cls = ETHKeyFileSecretManger
