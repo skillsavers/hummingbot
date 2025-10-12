@@ -108,6 +108,37 @@ async def quick_start(args: argparse.Namespace, secrets_manager: BaseSecretsMana
     if args.headless:
         client_config_map.mqtt_bridge.mqtt_autostart = True
 
+    # Override MQTT configuration from environment variables if provided
+    # This allows API-based deployments to inject MQTT credentials without modifying config files
+    mqtt_host = os.environ.get("MQTT_HOST")
+    mqtt_port = os.environ.get("MQTT_PORT")
+    mqtt_username = os.environ.get("MQTT_USERNAME")
+    mqtt_password = os.environ.get("MQTT_PASSWORD")
+    mqtt_namespace = os.environ.get("MQTT_NAMESPACE")
+
+    if mqtt_host:
+        client_config_map.mqtt_bridge.mqtt_host = mqtt_host
+        logging.getLogger().info(f"MQTT host set from environment: {mqtt_host}")
+
+    if mqtt_port:
+        try:
+            client_config_map.mqtt_bridge.mqtt_port = int(mqtt_port)
+            logging.getLogger().info(f"MQTT port set from environment: {mqtt_port}")
+        except ValueError:
+            logging.getLogger().warning(f"Invalid MQTT_PORT environment variable: {mqtt_port}")
+
+    if mqtt_username is not None:  # Allow empty string
+        client_config_map.mqtt_bridge.mqtt_username = mqtt_username
+        logging.getLogger().info("MQTT username set from environment")
+
+    if mqtt_password is not None:  # Allow empty string
+        client_config_map.mqtt_bridge.mqtt_password = mqtt_password
+        logging.getLogger().info("MQTT password set from environment")
+
+    if mqtt_namespace:
+        client_config_map.mqtt_bridge.mqtt_namespace = mqtt_namespace
+        logging.getLogger().info(f"MQTT namespace set from environment: {mqtt_namespace}")
+
     AllConnectorSettings.initialize_paper_trade_settings(client_config_map.paper_trade.paper_trade_exchanges)
 
     # Create unified application that handles both headless and UI modes
