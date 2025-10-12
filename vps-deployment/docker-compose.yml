@@ -16,6 +16,8 @@ services:
       - ./data/hummingbot/certs:/home/hummingbot/certs
       - ./data/hummingbot/scripts:/home/hummingbot/scripts
       - ./data/hummingbot/controllers:/home/hummingbot/controllers
+    environment:
+      - CONFIG_PASSWORD=${CONFIG_PASSWORD}
     logging:
       driver: json-file
       options:
@@ -25,9 +27,105 @@ services:
     stdin_open: true
     networks:
       - hummingbot-network
-    # Uncomment if Hummingbot exposes an API (usually on port 15888 for Gateway)
-    # expose:
-    #   - "15888"
+
+  # =================================================================
+  # MCP Integration Services
+  # =================================================================
+
+  # Hummingbot API Server - Required for MCP integration
+  hummingbot-api:
+    image: hummingbot/hummingbot-api:latest
+    container_name: hummingbot-api
+    restart: unless-stopped
+    volumes:
+      - ./data/bots:/hummingbot-api/bots
+      - /var/run/docker.sock:/var/run/docker.sock
+    environment:
+      - DEBUG_MODE=${DEBUG_MODE:-false}
+      - CONFIG_PASSWORD=${CONFIG_PASSWORD}
+      - API_USERNAME=${API_USERNAME}
+      - API_PASSWORD=${API_PASSWORD}
+      - BROKER_HOST=emqx
+      - BROKER_PORT=1883
+      - BROKER_USERNAME=${BROKER_USERNAME}
+      - BROKER_PASSWORD=${BROKER_PASSWORD}
+      - DATABASE_URL=postgresql+asyncpg://hbot:${POSTGRES_PASSWORD}@postgres:5432/hummingbot_api
+      - MARKET_DATA_CLEANUP_INTERVAL=${MARKET_DATA_CLEANUP_INTERVAL:-300}
+      - MARKET_DATA_FEED_TIMEOUT=${MARKET_DATA_FEED_TIMEOUT:-600}
+      - LOGFIRE_ENVIRONMENT=prod
+      - BANNED_TOKENS=["NAV","ARS","ETHW","ETHF","NEWT"]
+      - BOTS_PATH=/hummingbot-api/bots
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "5"
+    networks:
+      - hummingbot-network
+    expose:
+      - "8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      emqx:
+        condition: service_healthy
+
+  # PostgreSQL Database - Required for Hummingbot API
+  postgres:
+    image: postgres:15
+    container_name: hummingbot-postgres
+    restart: unless-stopped
+    environment:
+      - POSTGRES_DB=hummingbot_api
+      - POSTGRES_USER=hbot
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    networks:
+      - hummingbot-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U hbot -d hummingbot_api"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # EMQX MQTT Broker - Required for real-time bot communication
+  emqx:
+    image: emqx:5
+    container_name: hummingbot-broker
+    restart: unless-stopped
+    environment:
+      - EMQX_NAME=emqx
+      - EMQX_HOST=node1.emqx.local
+      - EMQX_CLUSTER__DISCOVERY_STRATEGY=static
+      - EMQX_CLUSTER__STATIC__SEEDS=[emqx@node1.emqx.local]
+      - EMQX_LOADED_PLUGINS="emqx_recon,emqx_retainer,emqx_management,emqx_dashboard"
+    volumes:
+      - emqx-data:/opt/emqx/data
+      - emqx-log:/opt/emqx/log
+      - emqx-etc:/opt/emqx/etc
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    networks:
+      hummingbot-network:
+        aliases:
+          - node1.emqx.local
+    expose:
+      - "1883"
+      - "18083"
+    healthcheck:
+      test: ["CMD", "/opt/emqx/bin/emqx_ctl", "status"]
+      interval: 5s
+      timeout: 25s
+      retries: 5
 
   nginx:
     image: nginx:alpine
@@ -51,6 +149,7 @@ services:
       - hummingbot-network
     depends_on:
       - hummingbot
+      - hummingbot-api
     healthcheck:
       test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost/health"]
       interval: 30s
@@ -68,12 +167,18 @@ services:
     environment:
       - WATCHTOWER_CLEANUP=true
       - WATCHTOWER_INCLUDE_STOPPED=false
-      - WATCHTOWER_POLL_INTERVAL=3600  # Check for updates every hour
+      - WATCHTOWER_POLL_INTERVAL=${WATCHTOWER_POLL_INTERVAL:-3600}
       - WATCHTOWER_ROLLING_RESTART=true
-    command: hummingbot nginx-proxy
+    command: hummingbot nginx-proxy hummingbot-api hummingbot-postgres hummingbot-broker
     networks:
       - hummingbot-network
 
 networks:
   hummingbot-network:
     driver: bridge
+
+volumes:
+  postgres-data: {}
+  emqx-data: {}
+  emqx-log: {}
+  emqx-etc: {}

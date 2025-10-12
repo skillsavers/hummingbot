@@ -1,0 +1,16 @@
+# MCP Test Bot Configuration
+# This configuration file defines a simple price logging bot for testing MCP integration
+
+script_file_name: mcp_test_bot.py
+
+# Testnet configuration for real API testing
+markets:
+  binance_perpetual_testnet:
+    - BTC-USDT
+    - ETH-USDT
+
+# Bot behavior settings
+candles_config: []
+
+# Risk management (for paper trading, these are for testing only)
+max_order_age: 1800

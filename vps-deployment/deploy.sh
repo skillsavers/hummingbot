@@ -103,6 +103,7 @@ echo "📁 Creating data directories..."
 mkdir -p data/hummingbot/{conf,data,logs,certs,scripts,controllers}
 mkdir -p data/hummingbot/conf/{connectors,strategies,controllers,scripts}
 mkdir -p data/nginx/{cache,logs}
+mkdir -p data/bots/credentials/master_account
 mkdir -p nginx/ssl
 
 # Set proper permissions

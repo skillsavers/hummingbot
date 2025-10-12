@@ -23,12 +23,14 @@ services:
         max-file: "5"
     tty: true
     stdin_open: true
-    network_mode: host
+    networks:
+      - hummingbot-network
   #  environment:
   #    - CONFIG_PASSWORD=admin
   #    - CONFIG_FILE_NAME=v2_with_controllers.py
   #    - SCRIPT_CONFIG=conf_v2_with_controllers.yml
 
+  # Hummingbot Gateway for DEX connections (optional)
   # gateway:
   #  restart: always
   #  container_name: gateway
@@ -42,3 +44,121 @@ services:
   #  environment:
   #    - GATEWAY_PASSPHRASE=admin
   #    - DEV=true
+  #  networks:
+  #    - hummingbot-network
+
+  # =================================================================
+  # MCP Integration Services
+  # =================================================================
+
+  # Hummingbot API Server - Required for MCP integration
+  hummingbot-api:
+    container_name: hummingbot-api
+    image: hummingbot/hummingbot-api:latest
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./bots:/hummingbot-api/bots
+      - /var/run/docker.sock:/var/run/docker.sock
+    environment:
+      - DEBUG_MODE=false
+      - CONFIG_PASSWORD=${CONFIG_PASSWORD:-admin}
+      - BROKER_HOST=emqx
+      - BROKER_PORT=1883
+      - BROKER_USERNAME=admin
+      - BROKER_PASSWORD=password
+      - DATABASE_URL=postgresql+asyncpg://hbot:hummingbot-api@postgres:5432/hummingbot_api
+      - MARKET_DATA_CLEANUP_INTERVAL=300
+      - MARKET_DATA_FEED_TIMEOUT=600
+      - LOGFIRE_ENVIRONMENT=prod
+      - BANNED_TOKENS=["NAV","ARS","ETHW","ETHF","NEWT"]
+      - BOTS_PATH=/hummingbot-api/bots
+    networks:
+      - hummingbot-network
+    depends_on:
+      postgres:
+        condition: service_healthy
+      emqx:
+        condition: service_healthy
+
+  # PostgreSQL Database - Required for Hummingbot API
+  postgres:
+    container_name: hummingbot-postgres
+    image: postgres:15
+    restart: unless-stopped
+    environment:
+      - POSTGRES_DB=hummingbot_api
+      - POSTGRES_USER=hbot
+      - POSTGRES_PASSWORD=hummingbot-api
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    networks:
+      - hummingbot-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U hbot -d hummingbot_api"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # EMQX MQTT Broker - Required for real-time bot communication
+  emqx:
+    container_name: hummingbot-broker
+    image: emqx:5
+    restart: unless-stopped
+    environment:
+      - EMQX_NAME=emqx
+      - EMQX_HOST=node1.emqx.local
+      - EMQX_CLUSTER__DISCOVERY_STRATEGY=static
+      - EMQX_CLUSTER__STATIC__SEEDS=[emqx@node1.emqx.local]
+      - EMQX_LOADED_PLUGINS="emqx_recon,emqx_retainer,emqx_management,emqx_dashboard"
+    volumes:
+      - emqx-data:/opt/emqx/data
+      - emqx-log:/opt/emqx/log
+      - emqx-etc:/opt/emqx/etc
+    ports:
+      - "1883:1883"    # mqtt:tcp
+      - "8883:8883"    # mqtt:tcp:ssl
+      - "8083:8083"    # mqtt:ws
+      - "8084:8084"    # mqtt:ws:ssl
+      - "8081:8081"    # http:management
+      - "18083:18083"  # http:dashboard
+      - "61613:61613"  # web-stomp gateway
+    networks:
+      hummingbot-network:
+        aliases:
+          - node1.emqx.local
+    healthcheck:
+      test: ["CMD", "/opt/emqx/bin/emqx_ctl", "status"]
+      interval: 5s
+      timeout: 25s
+      retries: 5
+
+  # Optional: Dashboard for managing bots via web UI
+  # Uncomment this section if you want a web interface
+  # dashboard:
+  #   container_name: hummingbot-dashboard
+  #   image: hummingbot/dashboard:latest
+  #   ports:
+  #     - "8501:8501"
+  #   environment:
+  #     - AUTH_SYSTEM_ENABLED=False
+  #     - BACKEND_API_HOST=hummingbot-api
+  #     - BACKEND_API_PORT=8000
+  #     - BACKEND_API_USERNAME=${API_USERNAME:-admin}
+  #     - BACKEND_API_PASSWORD=${API_PASSWORD:-admin}
+  #   networks:
+  #     - hummingbot-network
+  #   depends_on:
+  #     - hummingbot-api
+
+networks:
+  hummingbot-network:
+    driver: bridge
+
+volumes:
+  postgres-data: {}
+  emqx-data: {}
+  emqx-log: {}
+  emqx-etc: {}
