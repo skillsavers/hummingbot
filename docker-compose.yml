@@ -25,27 +25,27 @@ services:
     stdin_open: true
     networks:
       - hummingbot-network
-  #  environment:
-  #    - CONFIG_PASSWORD=admin
-  #    - CONFIG_FILE_NAME=v2_with_controllers.py
-  #    - SCRIPT_CONFIG=conf_v2_with_controllers.yml
+    #  environment:
+    #    - CONFIG_PASSWORD=admin
+    #    - CONFIG_FILE_NAME=v2_with_controllers.py
+    #    - SCRIPT_CONFIG=conf_v2_with_controllers.yml
 
-  # Hummingbot Gateway for DEX connections (optional)
-  # gateway:
-  #  restart: always
-  #  container_name: gateway
-  #  image: hummingbot/gateway:latest
-  #  ports:
-  #    - "15888:15888"
-  #  volumes:
-  #    - "./gateway-files/conf:/home/gateway/conf"
-  #    - "./gateway-files/logs:/home/gateway/logs"
-  #    - "./certs:/home/gateway/certs"
-  #  environment:
-  #    - GATEWAY_PASSPHRASE=admin
-  #    - DEV=true
-  #  networks:
-  #    - hummingbot-network
+    # Hummingbot Gateway for DEX connections (optional)
+  gateway:
+    restart: always
+    container_name: gateway
+    image: hummingbot/gateway:latest
+    ports:
+      - "15888:15888"
+    volumes:
+      - "./gateway-files/conf:/home/gateway/conf"
+      - "./gateway-files/logs:/home/gateway/logs"
+      - "./certs:/home/gateway/certs"
+    environment:
+      - GATEWAY_PASSPHRASE=admin
+      - DEV=true
+    networks:
+      - hummingbot-network
 
   # =================================================================
   # MCP Integration Services
@@ -97,7 +97,7 @@ services:
     networks:
       - hummingbot-network
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U hbot -d hummingbot_api"]
+      test: [ "CMD-SHELL", "pg_isready -U hbot -d hummingbot_api" ]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -130,7 +130,7 @@ services:
         aliases:
           - node1.emqx.local
     healthcheck:
-      test: ["CMD", "/opt/emqx/bin/emqx_ctl", "status"]
+      test: [ "CMD", "/opt/emqx/bin/emqx_ctl", "status" ]
       interval: 5s
       timeout: 25s
       retries: 5
@@ -158,7 +158,7 @@ networks:
     driver: bridge
 
 volumes:
-  postgres-data: {}
-  emqx-data: {}
-  emqx-log: {}
-  emqx-etc: {}
+  postgres-data: { }
+  emqx-data: { }
+  emqx-log: { }
+  emqx-etc: { }

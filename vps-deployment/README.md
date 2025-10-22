@@ -1,333 +1,382 @@
-# Hummingbot VPS Production Deployment
+# Hummingbot API-Based Deployment
 
-Production-ready deployment package for Hummingbot trading bot with Nginx reverse proxy, automatic restarts, and monitoring capabilities.
+Complete Hummingbot trading infrastructure with API-driven bot orchestration, web dashboard, and containerized services.
 
-## Features
+## Architecture
 
-- **Docker Compose** orchestration for easy management
-- **Nginx** reverse proxy (ready for API exposure and SSL)
-- **Automatic restarts** via systemd service
-- **Automatic updates** with Watchtower (checks hourly)
-- **Log rotation** (10MB max per file, 5 files retained)
-- **Health checks** for container monitoring
-- **Persistent data** storage
-- **Production-ready** security headers and rate limiting
+This deployment provides a production-ready Hummingbot environment where **all bot management is done via API** - no manual configuration file editing required.
+
+### Core Services
+
+- **Hummingbot API** (port 8000) - REST API for bot orchestration
+- **PostgreSQL** - Database for API persistence
+- **EMQX MQTT Broker** - Real-time bot communication
+- **Dashboard** (port 8501) - Web UI for monitoring and management
+- **Nginx** - Reverse proxy (ready for SSL)
+- **Watchtower** - Automatic container updates
+
+### Bot Deployment Model
+
+Bots are deployed **dynamically via API** as independent Docker containers. Each bot runs in its own container with:
+- Isolated configuration
+- Separate logs and data
+- Real-time MQTT connection to API
+- Encrypted credential storage
 
 ## Quick Start
 
 ### Prerequisites
 
-1. A VPS with SSH access (tested with Ubuntu/Debian)
-2. SSH key authentication set up
-3. User with sudo/root privileges
-4. GitHub Personal Access Token (if using private images) - see [GITHUB_AUTH.md](GITHUB_AUTH.md)
+1. Docker and Docker Compose installed
+2. `.env` file configured with all credentials
+3. Controllers copied to `data/bots/controllers/`
 
-### 1. Set Up SSH Access (if not already done)
+### 1. Configure Environment
 
-```bash
-ssh-copy-id root@46.101.135.160
-```
-
-### 2. Set Up GitHub Authentication (for private images)
-
-If your Docker image is private, set your GitHub credentials:
+All container configuration is managed via `.env` file:
 
 ```bash
-export GITHUB_USERNAME="your_github_username"
-export GITHUB_TOKEN="ghp_your_token_here"
+# Copy example and configure
+cp .env.example .env
+nano .env
 ```
 
-See [GITHUB_AUTH.md](GITHUB_AUTH.md) for detailed instructions on creating a GitHub Personal Access Token.
+**Required variables** (see [DOCKER_ENV_CONFIG.md](DOCKER_ENV_CONFIG.md) for details):
+- `CONFIG_PASSWORD` - Hummingbot master encryption password
+- `API_USERNAME` / `API_PASSWORD` - API authentication
+- `POSTGRES_PASSWORD` - Database password
+- `BROKER_USERNAME` / `BROKER_PASSWORD` - MQTT credentials
+- `DASHBOARD_USERNAME` / `DASHBOARD_PASSWORD` - Web UI login
 
-### 3. Deploy to VPS
-
-Simply run the deployment script:
+### 2. Start Infrastructure
 
 ```bash
-cd vps-deployment
-./deploy.sh
+docker-compose up -d
 ```
 
-The script will:
-- Install Docker and Docker Compose (if needed)
-- Transfer configuration files
-- Set up systemd service
-- Start all containers
-- Configure automatic restarts
+This starts all 6 core services. Wait 30 seconds for initialization.
 
-### 4. Verify Deployment
+### 3. Verify Services
 
 ```bash
-ssh root@46.101.135.160 'docker compose -f /opt/hummingbot/docker-compose.yml ps'
+# Check all containers running
+docker-compose ps
+
+# Test API authentication
+source .env
+curl -u "$API_USERNAME:$API_PASSWORD" http://localhost:8000/accounts/
+
+# Access dashboard
+open http://localhost:8501
 ```
+
+### 4. Add Exchange Credentials
+
+```bash
+source .env
+
+curl -X POST "http://localhost:8000/accounts/add-credential/master_account/binance_perpetual_testnet" \
+  -H "Content-Type: application/json" \
+  -u "$API_USERNAME:$API_PASSWORD" \
+  -d '{
+    "binance_perpetual_testnet_api_key": "YOUR_API_KEY",
+    "binance_perpetual_testnet_api_secret": "YOUR_API_SECRET"
+  }'
+```
+
+### 5. Deploy a Bot
+
+See [BOT_DEPLOYMENT_SUCCESS.md](BOT_DEPLOYMENT_SUCCESS.md) for complete bot deployment guide with controller configuration examples.
 
 ## File Structure
 
 ```
 vps-deployment/
-├── deploy.sh                    # Main deployment script
-├── docker-compose.yml           # Docker Compose configuration
+├── .env                          # All configuration (DO NOT COMMIT)
+├── .env.example                  # Template without secrets
+├── docker-compose.yml            # Infrastructure definition
 ├── nginx/
-│   ├── nginx.conf              # Main Nginx configuration
-│   ├── conf.d/
-│   │   └── default.conf        # Server blocks and routing
-│   └── ssl/                    # Place SSL certificates here
-└── README.md                    # This file
+│   ├── nginx.conf               # Main Nginx config
+│   ├── conf.d/                  # Server blocks
+│   └── ssl/                     # SSL certificates (optional)
+├── data/
+│   ├── bots/
+│   │   ├── controllers/         # Controller implementations
+│   │   ├── credentials/         # Encrypted exchange credentials
+│   │   ├── conf/               # Controller configurations
+│   │   └── instances/          # Bot instance containers
+│   ├── dashboard/              # Dashboard data
+│   └── nginx/                  # Nginx logs and cache
+└── scripts/                     # Optional automation scripts
+
+Documentation:
+├── README.md                    # This file
+├── BOT_DEPLOYMENT_SUCCESS.md    # Complete bot deployment guide
+├── DOCKER_ENV_CONFIG.md         # .env variable reference
+├── ENV_DEPLOYMENT_CHECKLIST.md  # VPS deployment checklist
+└── CLAUDE.md                    # API limitations and notes
 ```
 
-After deployment on VPS:
-```
-/opt/hummingbot/
-├── docker-compose.yml
-├── nginx/
-│   ├── nginx.conf
-│   ├── conf.d/
-│   └── ssl/
-└── data/
-    ├── hummingbot/
-    │   ├── conf/               # Bot configuration
-    │   ├── data/               # Bot data
-    │   ├── logs/               # Bot logs
-    │   ├── certs/              # Certificates
-    │   ├── scripts/            # Custom scripts
-    │   └── controllers/        # Controllers
-    └── nginx/
-        ├── cache/              # Nginx cache
-        └── logs/               # Nginx logs
-```
+## Bot Management via API
 
-## Common Operations
-
-### Attach to Hummingbot Console
+### List Available Controllers
 
 ```bash
-ssh root@46.101.135.160 'docker attach hummingbot'
+curl -u "$API_USERNAME:$API_PASSWORD" http://localhost:8000/controllers/
 ```
 
-**Important**: Use `Ctrl+P` followed by `Ctrl+Q` to detach without stopping the container.
-
-### View Logs
+### Create Controller Configuration
 
 ```bash
-# Hummingbot logs
-ssh root@46.101.135.160 'cd /opt/hummingbot && docker compose logs -f hummingbot'
-
-# Nginx logs
-ssh root@46.101.135.160 'cd /opt/hummingbot && docker compose logs -f nginx'
-
-# All logs
-ssh root@46.101.135.160 'cd /opt/hummingbot && docker compose logs -f'
+curl -X POST "http://localhost:8000/controllers/configs/my_strategy" \
+  -H "Content-Type: application/json" \
+  -u "$API_USERNAME:$API_PASSWORD" \
+  -d '{
+    "id": "my_strategy",
+    "controller_name": "pmm_simple",
+    "controller_type": "market_making",
+    "connector_name": "binance_perpetual_testnet",
+    "trading_pair": "BTC-USDT",
+    "total_amount_quote": 50,
+    "buy_spreads": [0.01, 0.02],
+    "sell_spreads": [0.01, 0.02],
+    "leverage": 1
+  }'
 ```
 
-### Restart Services
+### Deploy Bot Instance
 
 ```bash
-# Via systemd (recommended)
-ssh root@46.101.135.160 'systemctl restart hummingbot'
-
-# Via docker compose
-ssh root@46.101.135.160 'cd /opt/hummingbot && docker compose restart'
+curl -X POST "http://localhost:8000/bot-orchestration/deploy-v2-controllers" \
+  -H "Content-Type: application/json" \
+  -u "$API_USERNAME:$API_PASSWORD" \
+  -d '{
+    "instance_name": "my_bot",
+    "credentials_profile": "master_account",
+    "controllers_config": ["my_strategy"],
+    "headless": true
+  }'
 ```
 
-### Update to Latest Version
-
-Watchtower automatically checks for updates every hour. To manually update:
+### Monitor Bot
 
 ```bash
-ssh root@46.101.135.160 'cd /opt/hummingbot && docker compose pull && docker compose up -d'
+# Check bot status
+curl -u "$API_USERNAME:$API_PASSWORD" http://localhost:8000/bot-orchestration/status
+
+# View bot logs
+docker logs my_bot -f
+
+# Check active orders
+curl -X POST "http://localhost:8000/trading/orders/active" \
+  -H "Content-Type: application/json" \
+  -u "$API_USERNAME:$API_PASSWORD" \
+  -d '{"account_name": "master_account", "connector_name": "binance_perpetual_testnet"}'
 ```
 
-### Stop Services
+## VPS Deployment
+
+### Step 1: Copy Files to VPS
 
 ```bash
-ssh root@46.101.135.160 'systemctl stop hummingbot'
+# Copy .env (contains all secrets)
+scp .env root@YOUR_VPS_IP:/root/hummingbot-deployment/
+
+# Copy docker configuration
+scp docker-compose.yml root@YOUR_VPS_IP:/root/hummingbot-deployment/
+scp -r nginx/ root@YOUR_VPS_IP:/root/hummingbot-deployment/
+scp -r data/bots/controllers/ root@YOUR_VPS_IP:/root/hummingbot-deployment/data/bots/
 ```
 
-### Start Services
+### Step 2: Start on VPS
 
 ```bash
-ssh root@46.101.135.160 'systemctl start hummingbot'
+ssh root@YOUR_VPS_IP
+
+cd /root/hummingbot-deployment
+
+# Verify .env exists
+ls -la .env
+
+# Start all containers
+docker-compose up -d
+
+# Wait for initialization
+sleep 30
+
+# Verify all running
+docker-compose ps
 ```
 
-### Check Status
+### Step 3: Add Credentials and Deploy
 
-```bash
-# Container status
-ssh root@46.101.135.160 'cd /opt/hummingbot && docker compose ps'
+Follow the same API workflow as local deployment to:
+1. Add exchange credentials
+2. Create controller configurations
+3. Deploy bot instances
 
-# Service status
-ssh root@46.101.135.160 'systemctl status hummingbot'
-
-# Health check
-curl http://46.101.135.160/health
-```
-
-## Configuration
-
-### Environment Variables
-
-You can customize the deployment by setting these environment variables before running `deploy.sh`:
-
-```bash
-export VPS_HOST="your-vps-ip"
-export VPS_USER="your-username"
-./deploy.sh
-```
-
-### Nginx Configuration
-
-Edit `nginx/conf.d/default.conf` to:
-- Add SSL/HTTPS configuration
-- Expose Hummingbot Gateway API
-- Add custom domains
-- Configure additional services
-
-After making changes, redeploy or restart nginx:
-
-```bash
-ssh root@46.101.135.160 'cd /opt/hummingbot && docker compose restart nginx'
-```
-
-## SSL/HTTPS Setup
-
-### Using Let's Encrypt (Recommended)
-
-1. SSH into your VPS:
-   ```bash
-   ssh root@46.101.135.160
-   ```
-
-2. Install certbot:
-   ```bash
-   apt-get update
-   apt-get install -y certbot
-   ```
-
-3. Get certificate (replace with your domain):
-   ```bash
-   certbot certonly --standalone -d yourdomain.com
-   ```
-
-4. Copy certificates:
-   ```bash
-   cp /etc/letsencrypt/live/yourdomain.com/fullchain.pem /opt/hummingbot/nginx/ssl/
-   cp /etc/letsencrypt/live/yourdomain.com/privkey.pem /opt/hummingbot/nginx/ssl/
-   ```
-
-5. Uncomment HTTPS configuration in `nginx/conf.d/default.conf`
-
-6. Restart nginx:
-   ```bash
-   cd /opt/hummingbot && docker compose restart nginx
-   ```
-
-### Auto-renewal
-
-Add to crontab:
-```bash
-0 0 * * * certbot renew --quiet && cp /etc/letsencrypt/live/yourdomain.com/*.pem /opt/hummingbot/nginx/ssl/ && cd /opt/hummingbot && docker compose restart nginx
-```
+See [ENV_DEPLOYMENT_CHECKLIST.md](ENV_DEPLOYMENT_CHECKLIST.md) for complete VPS deployment guide.
 
 ## Monitoring
 
-### Check Container Health
+### Container Health
 
 ```bash
-ssh root@46.101.135.160 'docker ps --filter health=healthy'
+# All containers
+docker-compose ps
+
+# Specific service logs
+docker-compose logs -f hummingbot-api
+
+# Bot instance logs
+docker logs <instance_name> -f
 ```
 
-### View Resource Usage
+### API Health Checks
 
 ```bash
-ssh root@46.101.135.160 'docker stats'
+# Bot orchestration status
+curl -u "$API_USERNAME:$API_PASSWORD" http://localhost:8000/bot-orchestration/status
+
+# Database connectivity
+docker exec hummingbot-postgres pg_isready -U hbot -d hummingbot_api
+
+# MQTT broker status
+docker exec hummingbot-broker /opt/emqx/bin/emqx_ctl status
 ```
 
-### Check Nginx Status
+### Resource Usage
 
 ```bash
-ssh root@46.101.135.160 'curl http://localhost/nginx-status'
+docker stats
+```
+
+## Maintenance
+
+### Update Containers
+
+Watchtower automatically checks for updates every hour. For manual updates:
+
+```bash
+docker-compose pull
+docker-compose up -d
+```
+
+### Backup
+
+```bash
+# Backup everything
+tar czf hummingbot-backup-$(date +%Y%m%d).tar.gz \
+  .env \
+  docker-compose.yml \
+  data/ \
+  nginx/
+
+# Backup database only
+docker exec hummingbot-postgres pg_dump -U hbot hummingbot_api > backup.sql
+```
+
+### Restore
+
+```bash
+# Extract backup
+tar xzf hummingbot-backup-YYYYMMDD.tar.gz
+
+# Restart services
+docker-compose up -d
+```
+
+## Security
+
+### Environment File Protection
+
+```bash
+# Set proper permissions
+chmod 600 .env
+
+# Verify it's ignored by git
+grep ".env" .gitignore
+```
+
+### Encrypted Backup
+
+```bash
+# Encrypt .env for safe storage
+gpg -c .env
+# Creates .env.gpg - store this securely
+
+# To restore
+gpg -d .env.gpg > .env
+```
+
+### Firewall (VPS)
+
+```bash
+ufw allow 22/tcp   # SSH
+ufw allow 80/tcp   # HTTP
+ufw allow 443/tcp  # HTTPS
+ufw enable
 ```
 
 ## Troubleshooting
 
-### Containers won't start
+### Container Won't Start
 
 ```bash
 # Check logs
-ssh root@46.101.135.160 'cd /opt/hummingbot && docker compose logs'
+docker-compose logs <service_name>
 
-# Check Docker service
-ssh root@46.101.135.160 'systemctl status docker'
+# Verify .env variables
+grep -E "^[A-Z_]+=" .env | wc -l
+# Should show at least 13 variables
 
-# Restart everything
-ssh root@46.101.135.160 'systemctl restart docker && systemctl restart hummingbot'
+# Restart services
+docker-compose restart
 ```
 
-### Can't connect to VPS
+### API Authentication Fails
 
 ```bash
-# Test SSH connection
-ssh -v root@46.101.135.160
+# Verify credentials
+source .env
+echo "Username: $API_USERNAME"
+echo "Password: $API_PASSWORD"
 
-# Ensure SSH key is added
-ssh-add -l
-ssh-copy-id root@46.101.135.160
+# Test with verbose output
+curl -v -u "$API_USERNAME:$API_PASSWORD" http://localhost:8000/accounts/
 ```
 
-### Port conflicts
-
-If ports 80 or 443 are already in use:
+### Bot Can't Place Orders
 
 ```bash
-# Check what's using the port
-ssh root@46.101.135.160 'ss -tlnp | grep :80'
+# Check credentials
+curl -u "$API_USERNAME:$API_PASSWORD" \
+  "http://localhost:8000/accounts/master_account/credentials"
 
-# Stop conflicting service
-ssh root@46.101.135.160 'systemctl stop apache2'  # Example
+# Check balance
+curl -X POST "http://localhost:8000/portfolio/balances" \
+  -H "Content-Type: application/json" \
+  -u "$API_USERNAME:$API_PASSWORD" \
+  -d '{"account_name": "master_account", "connector_names": ["binance_perpetual_testnet"]}'
+
+# Check bot logs for errors
+docker logs <bot_instance_name> --tail 100
 ```
 
-## Security Recommendations
+## Documentation
 
-1. **Change default SSH port** (edit `/etc/ssh/sshd_config`)
-2. **Set up firewall**:
-   ```bash
-   ufw allow 22/tcp
-   ufw allow 80/tcp
-   ufw allow 443/tcp
-   ufw enable
-   ```
-3. **Enable SSL/HTTPS** (see SSL setup section)
-4. **Regular updates**:
-   ```bash
-   ssh root@46.101.135.160 'apt-get update && apt-get upgrade -y'
-   ```
-5. **Monitor logs** regularly for suspicious activity
-6. **Use strong passwords** for Hummingbot configuration
+- **BOT_DEPLOYMENT_SUCCESS.md** - Complete bot deployment workflow with examples
+- **DOCKER_ENV_CONFIG.md** - Detailed .env variable reference
+- **ENV_DEPLOYMENT_CHECKLIST.md** - Step-by-step VPS deployment guide
+- **CLAUDE.md** - API limitations and workarounds
 
-## Backup
+## Resources
 
-### Backup Hummingbot Data
-
-```bash
-ssh root@46.101.135.160 'cd /opt/hummingbot && tar -czf hummingbot-backup-$(date +%Y%m%d).tar.gz data/hummingbot'
-
-scp root@46.101.135.160:/opt/hummingbot/hummingbot-backup-*.tar.gz ./backups/
-```
-
-### Restore from Backup
-
-```bash
-scp ./backups/hummingbot-backup-YYYYMMDD.tar.gz root@46.101.135.160:/opt/hummingbot/
-
-ssh root@46.101.135.160 'cd /opt/hummingbot && tar -xzf hummingbot-backup-YYYYMMDD.tar.gz && systemctl restart hummingbot'
-```
-
-## Support
-
-- Hummingbot Documentation: https://docs.hummingbot.org/
-- GitHub: https://github.com/skillsavers/hummingbot
-- Discord: https://discord.hummingbot.io/
+- [Hummingbot Documentation](https://docs.hummingbot.org/)
+- [Hummingbot API Docs](https://docs.hummingbot.org/api/)
+- [V2 Strategy Framework](https://docs.hummingbot.org/v2-strategies/)
+- [Discord Community](https://discord.hummingbot.io/)
 
 ## License
 
-This deployment configuration is provided as-is. Hummingbot is licensed under Apache 2.0.
+Hummingbot is licensed under Apache 2.0.
