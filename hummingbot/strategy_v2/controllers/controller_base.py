@@ -69,6 +69,9 @@ class ControllerConfigBase(BaseClientModel):
         if isinstance(v, str):
             return cls.parse_candles_config_str(v)
         elif isinstance(v, list):
+            # If list contains dicts, convert them to CandlesConfig objects
+            if v and isinstance(v[0], dict):
+                return [CandlesConfig(**item) for item in v]
             return v
         raise ValueError("Invalid type for candles_config. Expected str or List[CandlesConfig]")
 
