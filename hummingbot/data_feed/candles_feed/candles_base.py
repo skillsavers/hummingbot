@@ -114,8 +114,10 @@ class CandlesBase(NetworkBase):
     def ready(self):
         """
         This property returns a boolean indicating whether the _candles deque has reached its maximum length.
+        Modified to accept partial fills - ready if we have at least 50% of requested candles.
         """
-        return len(self._candles) == self._candles.maxlen
+        min_candles_required = max(10, self._candles.maxlen // 2)  # At least 10 candles or 50% of max
+        return len(self._candles) >= min_candles_required
 
     @property
     def name(self):
