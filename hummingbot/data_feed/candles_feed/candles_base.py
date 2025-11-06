@@ -75,12 +75,16 @@ class CandlesBase(NetworkBase):
         # This ensures the feed becomes ready quickly without waiting for websocket
         try:
             end_time = int(time.time())
+            self.logger().info(f"Fetching {self.max_records} historical candles for {self._trading_pair}")
             candles = await self.fetch_candles(end_time=end_time, limit=self.max_records)
+            self.logger().info(f"Received {len(candles)} candles from REST API for {self._trading_pair}")
             if len(candles) > 0:
                 # Add candles to the deque (newest last)
                 for candle_row in candles:
                     self._candles.append(candle_row)
                 self.logger().info(f"Initialized {len(self._candles)}/{self.max_records} candles for {self._trading_pair}")
+            else:
+                self.logger().warning(f"REST API returned 0 candles for {self._trading_pair}, will wait for websocket data")
         except Exception as e:
             self.logger().error(f"Failed to fetch initial historical candles: {e}", exc_info=True)
             # Don't fail - websocket will still try to populate
