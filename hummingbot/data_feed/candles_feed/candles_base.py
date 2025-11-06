@@ -70,6 +70,21 @@ class CandlesBase(NetworkBase):
         """
         await self.stop_network()
         await self.initialize_exchange_data()
+
+        # Fetch historical candles immediately to populate the deque
+        # This ensures the feed becomes ready quickly without waiting for websocket
+        try:
+            end_time = int(time.time())
+            candles = await self.fetch_candles(end_time=end_time, limit=self.max_records)
+            if len(candles) > 0:
+                # Add candles to the deque (newest last)
+                for candle_row in candles:
+                    self._candles.append(candle_row)
+                self.logger().info(f"Initialized {len(self._candles)}/{self.max_records} candles for {self._trading_pair}")
+        except Exception as e:
+            self.logger().error(f"Failed to fetch initial historical candles: {e}", exc_info=True)
+            # Don't fail - websocket will still try to populate
+
         self._listen_candles_task = safe_ensure_future(self.listen_for_subscriptions())
 
     async def stop_network(self):
