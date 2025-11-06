@@ -68,8 +68,11 @@ class CandlesBase(NetworkBase):
         """
         This method starts the network and starts a task for listen_for_subscriptions.
         """
+        self.logger().info(f"[CANDLES FIX] start_network() called for {self._trading_pair}")
         await self.stop_network()
+        self.logger().info(f"[CANDLES FIX] After stop_network() for {self._trading_pair}")
         await self.initialize_exchange_data()
+        self.logger().info(f"[CANDLES FIX] After initialize_exchange_data() for {self._trading_pair}")
 
         # Fetch historical candles immediately to populate the deque
         # This ensures the feed becomes ready quickly without waiting for websocket
